@@ -8,9 +8,9 @@ Data + (prelim) Processing/Analysis Pipeline
 
 
 **Processing Pipeline Architecture** (raw data —> hssm ready df) click the links to walk through the html files in order: 
-* 1. script1_processing_make_ema_sjdm_dfs.html
-* 2. script2_processing_make_full_ema_dfs.html
-* 3. script3_prep_for_hssm.html
+* 1. [script1_processing_make_ema_sjdm_dfs.html](https://htmlpreview.github.io/?https://github.com/amiraparker/AP_CPC2026_Poster_Supplement/blob/main/htmls/script1_processing_make_ema_sjdm_dfs.html)
+* 2. [script2_processing_make_full_ema_dfs.html](https://htmlpreview.github.io/?https://github.com/amiraparker/AP_CPC2026_Poster_Supplement/blob/main/htmls/script2_processing_make_full_ema_dfs.html)
+* 3. [script3_prep_for_hssm.html](https://htmlpreview.github.io/?https://github.com/amiraparker/AP_CPC2026_Poster_Supplement/blob/main/htmls/script3_prep_for_hssm.html)
 
 Input and Output for each part of processing pipeline: 
 * script1_processing_make_ema_sjdm_dfs.Rmd
@@ -29,8 +29,8 @@ If you want to run the .Rmds refer to folder ‘processing_scripts’ and select
 
 **Analysis Scripts** click the links to walk look through the html files with the key analyses used in the poster: 
 
-* 1. post-run_cpc_model.html
-* 2. key_plots.html
+* 1. [post-run_cpc_model.html](https://htmlpreview.github.io/?https://github.com/amiraparker/AP_CPC2026_Poster_Supplement/blob/main/htmls/post-run_cpc_model.html)
+* 2. [key_plots.html](https://htmlpreview.github.io/?https://github.com/amiraparker/AP_CPC2026_Poster_Supplement/blob/main/htmls/key_plots.html)
  
 Input and Output for each part of analysis pipeline: 
 * post-run_cpc_model.Rmd (NOTE: If you want to run this script you will need to change directories to your 
