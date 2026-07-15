@@ -1,0 +1,1049 @@
+---
+title: "SCRIPT 3 - EMPERICAL DATA ANALYSIS: Pre-Trip SS plots (all trials)"
+date: "07.08.2026"
+format:
+  html:
+    code-fold: true
+    embed-resources: true
+    toc: true
+    toc-depth: 3
+    df-print: paged
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+set dire
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = here::here())
+
+```
+
+display
+```{css, echo=FALSE}
+pre { max-width: 100%; overflow-x: auto; }
+```
+
+hssm venv
+```{r}
+library(reticulate)
+# use_python("/opt/anaconda3/envs/hssm_venv/bin/python")
+use_condaenv("hssm_venv", required = TRUE)
+```
+
+py packages 
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.special import expit
+from sklearn.linear_model import LogisticRegression
+from scipy.interpolate import UnivariateSpline
+
+```
+
+
+### source scripts with functions 
+```{r, message=FALSE, warning=FALSE}
+#setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+source("Functions/packages.R")
+
+#source("Functions/puns-analyses_functions.R")
+```
+
+### load packages 
+```{r, message=FALSE, warning=FALSE}
+options(repos = c(CRAN = "https://cloud.r-project.org/"))
+loadpackages()
+conflicts_prefer(rstatix::filter)
+conflicts_prefer(dplyr::rename)
+conflicts_prefer(dplyr::summarise)
+conflicts_prefer(dplyr::summarize)
+conflicts_prefer(dplyr::mutate)
+conflicts_prefer(dplyr::arrange)
+conflicts_prefer(dplyr::count)
+conflicts_prefer(dplyr::filter)
+
+```
+
+### load data
+```{r}
+#setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+#setwd("..")
+
+emas_pre <- read_csv("pre-processed_full-ema_data/full_ema_pre-trip.csv")
+#str(emas_all)
+
+emas_pre$rt <- as.numeric(emas_pre$rt)
+emas_pre$response <- as.numeric(emas_pre$response)
+emas_pre$ema_number <- emas_pre$session_number
+#emas_pre$day_num <- ceiling(emas_pre$session_number / 3)
+
+
+tibble(
+  step = "only pre-trip data",
+  n_trial_rows = nrow(emas_pre),
+  n_sessions = nrow(emas_pre) / 24,
+  n_pts = n_distinct(emas_pre$PUNS_ID)
+) %>% gt() %>% tab_options(table.width = pct(80))
+```
+
+
+
+### fix valence var 
+```{r}
+table(emas_pre$valence)
+
+#------------------------------------------------------------------------------#
+# what i had in og code 
+# emas_pre$delta_valence <- ifelse(emas_pre$valence == "PosPos" | emas_pre$trial_type == "NegNeg", 0,
+#                      ifelse(emas_pre$right_valence == "positive", 1, -1))
+# 
+
+#------------------------------------------------------------------------------#
+
+
+
+#table(emas_pre$valence)
+
+# when value of emas_pre$valence col = negneg or pospos / emas_pre$delta_valence = 0
+# when value of emas_pre$valence col = posneg...
+  # emas_pre$delta_valence = -1 if right_valence = negative (POSITIVE WORD ON LEFT HAND SIDE)
+  # / OR /
+  # emas_pre$delta_valence = +1 if right_valence = positive (POSITIVE WORD ON RIGHT HAND SIDE)
+#------------------------------------------------------------------------------#
+emas_pre$delta_valence <- ifelse(emas_pre$valence %in% c("PosPos", "NegNeg"), 0,
+                          ifelse(emas_pre$right_valence == "positive", 1, -1))
+#------------------------------------------------------------------------------#
+#trial type counts
+table(emas_pre$delta_valence)
+
+
+
+```
+
+
+
+
+## Create var chose_pos
+```{r}
+
+# create chose_pos
+  # delta_valence = +1 means positive word is on the right
+  # delta_valence = -1 means positive word is on the left
+  # response = 0 means they chose left, response = 1 means they chose right
+  # sooo... when chose_pos = 1 pt picked the side the positive word was on
+
+
+emas_pre$chose_pos  <- ifelse(emas_pre$delta_valence == 0, NA,
+                        ifelse(emas_pre$delta_valence == 1,
+                               ifelse(emas_pre$response == 1, 1, 0),
+                               ifelse(emas_pre$response == 0, 1, 0)))
+# num of posneg trials
+sum(!is.na(emas_pre$chose_pos))
+
+
+```
+
+## Create delta_posneg_sb
+```{r}
+# Positive word's base rating minus negative word's base rating.
+# valence = +1 is NEGPOS aka positive word is on the right: right_rating - left_rating
+# valence = -1 is POSNEG aka positive word is on the left: left_rating - right_rating
+# valence = 0 is POSPOS or NEGNEG 
+
+emas_pre$delta_posneg_sb  <- ifelse(emas_pre$delta_valence == 0, NA,
+                              ifelse(emas_pre$delta_valence == 1,
+                                     emas_pre$right_base_rating - emas_pre$left_base_rating,
+                                     emas_pre$left_base_rating - emas_pre$right_base_rating))
+
+
+# within subj z score 
+
+emas_pre <- emas_pre %>%
+  group_by(PUNS_ID) %>%
+  mutate(delta_posneg_sb_z_within = as.numeric(scale(delta_posneg_sb))) %>%
+  ungroup()
+
+# across subj z score 
+
+emas_pre <- emas_pre %>%
+  mutate(delta_posneg_sb_z = as.numeric(scale(delta_posneg_sb))) 
+
+# across subj normed
+
+emas_pre <- emas_pre %>% 
+  mutate(delta_posneg_sb_normed = as.numeric(delta_posneg_sb / 200))
+
+
+```
+
+## Create delta_sb
+```{r}
+# Same thing as r_diff_norm in sandarsh's code (right rating - left rating)
+emas_pre$delta_sb <- (emas_pre$right_base_rating - emas_pre$left_base_rating)
+
+# within subj z score 
+emas_pre <- emas_pre %>%
+  group_by(PUNS_ID) %>%
+  mutate(delta_sb_z_within = as.numeric(scale(delta_sb))) %>%
+  ungroup()
+
+# across subj z score 
+emas_pre <- emas_pre %>%
+  mutate(delta_sb_z = as.numeric(scale(delta_sb))) %>%
+  ungroup()
+
+# across subj normed
+emas_pre <- emas_pre %>% 
+  mutate(delta_sb_normed = as.numeric(delta_sb / 200))
+
+# within subj normed
+    # "Δself-belief was subject-
+    # centered to remove between-subject differences in the use of the scale from the pre-task ratings. This
+    # was done by first computing, on each trial, the difference between the participant’s self-belief ratings
+    # for the right and left words. For each participant, these differences were then rescaled by subtracting
+    # the participant-specific minimum difference and dividing by the participant-specific range (i.e., the
+    # maximum minus the minimum), resulting in values bounded between 0 and 1."Finally, the rescaled
+    # values were shifted by subtracting 0.5, yielding a centered measure ranging from −0.5 to 0.5."
+emas_pre <- emas_pre %>%
+  group_by(PUNS_ID) %>%
+  # rescale delta_sb to be between 0 and 1 using this: (delta_sb - min) / (max - min) (this is standard min-max normalization formula)
+  mutate(delta_sb_rescaled = (delta_sb - min(delta_sb, na.rm = TRUE)) / 
+           (max(delta_sb, na.rm = TRUE) - min(delta_sb, na.rm = TRUE))) %>% 
+  # center rescaled values on 0  with a range -0.5 to 0.5 by subtracting by 0.5
+  mutate(delta_sb_within_subj_normed = delta_sb_rescaled - 0.5) %>%
+  ungroup()
+```
+
+
+# Distibution of delta_posneg_sb and delta_sb 
+```{r}
+#emas_all %>%
+#  mutate(delta_bin = cut(delta_posneg_sb, breaks = 20)) %>%
+#  group_by(delta_bin) %>%
+#  summarise(
+#    n = n(),
+#    n_timeout = sum(is.na(response) | is.na(rt)),
+#    pct_timeout = round(n_timeout / n * 100, 1),
+#    n_invalid = sum(valid_response == FALSE | is.na(valid_response)),
+#    pct_invalid = round(n_invalid / n * 100, 1)
+#  ) %>%
+#  print(n = 20)
+
+
+
+hist(emas_pre$delta_posneg_sb, breaks = 20)
+
+
+hist(emas_pre$delta_sb, breaks = 20)
+
+
+#----------------------------------------------------------------------------#
+emas_pre$is_noresponse <- emas_pre$valid_response == FALSE | is.na(emas_pre$valid_response)
+
+emas_pre$under_200ms <- emas_pre$rt < 200
+
+emas_pre$somehow_over_5000ms <- emas_pre$rt > 5000
+
+
+
+
+emas_pre$rt_quality <- case_when(
+  emas_pre$is_noresponse ~ "no_response",
+  emas_pre$under_200ms ~ "under_200ms",
+  emas_pre$somehow_over_5000ms ~ "somehow_over_5000ms",
+  TRUE ~ "valid"
+)
+emas_pre$rt_quality <- factor(emas_pre$rt_quality,
+                               levels = c("valid", "no_response", "under_200ms", "somehow_over_5000ms"))
+
+
+table(emas_pre$rt_quality)
+#----------------------------------------------------------------------------#
+
+# delta_posneg_sb
+# p1 <- emas_all %>%
+#   ggplot(aes(x = delta_posneg_sb, fill = rt_quality)) +
+#   geom_histogram(bins = 30, position = "stack", color = "white", alpha = 0.85) +
+#   scale_fill_manual(values = c("valid" = "blue", "no_response" = "red",
+#                                 "under_200ms" = "orange", "somehow_over_5000ms" = "purple"),
+#                     name = "trial quality") +
+#   labs(title = "ALL DATA (delta_posneg_sb)", x = "delta_posneg_sb", y = "count") +
+#   theme_minimal()
+
+
+
+p2 <- emas_pre %>%
+  ggplot(aes(x = delta_posneg_sb, fill = rt_quality)) +
+  geom_histogram(bins = 30, position = "stack", color = "white", alpha = 0.85) +
+  scale_fill_manual(values = c("valid" = "blue", "no_response" = "red",
+                                "under_200ms" = "orange", "somehow_over_5000ms" = "purple"),
+                    name = "trial quality") +
+  labs(title = "PRE TRIP DATA (delta_posneg_sb)", x = "delta_posneg_sb", y = "count") +
+  theme_minimal()
+
+# p3 <- emas_post %>%
+#   ggplot(aes(x = delta_posneg_sb, fill = rt_quality)) +
+#   geom_histogram(bins = 30, position = "stack", color = "white", alpha = 0.85) +
+#   scale_fill_manual(values = c("valid" = "blue", "no_response" = "red",
+#                                 "under_200ms" = "orange", "somehow_over_5000ms" = "purple"),
+#                     name = "trial quality") +
+#   labs(title = "POST TRIP DATA (delta_posneg_sb)", x = "delta_posneg_sb", y = "count") +
+#   theme_minimal()
+
+# delta_sb
+# p4 <- emas_all %>%
+#   ggplot(aes(x = delta_sb, fill = rt_quality)) +
+#   geom_histogram(bins = 30, position = "stack", color = "white", alpha = 0.85) +
+#   scale_fill_manual(values = c("valid" = "blue", "no_response" = "red",
+#                                 "under_200ms" = "orange", "somehow_over_5000ms" = "purple"),
+#                     name = "trial quality") +
+#   labs(title = "ALL DATA (delta_sb)", x = "delta_sb", y = "count") +
+#   theme_minimal()
+
+p5 <- emas_pre %>%
+  ggplot(aes(x = delta_sb, fill = rt_quality)) +
+  geom_histogram(bins = 30, position = "stack", color = "white", alpha = 0.85) +
+  scale_fill_manual(values = c("valid" = "blue", "no_response" = "red",
+                                "under_200ms" = "orange", "somehow_over_5000ms" = "purple"),
+                    name = "trial quality") +
+  labs(title = "PRE TRIP DATA (delta_sb)", x = "delta_sb", y = "count") +
+  theme_minimal()
+
+# p6 <- emas_post %>%
+#   ggplot(aes(x = delta_sb, fill = rt_quality)) +
+#   geom_histogram(bins = 30, position = "stack", color = "white", alpha = 0.85) +
+#   scale_fill_manual(values = c("valid" = "blue", "no_response" = "red",
+#                                 "under_200ms" = "orange", "somehow_over_5000ms" = "purple"),
+#                     name = "trial quality") +
+#   labs(title = "POST TRIP DATA (delta_sb)", x = "delta_sb", y = "count") +
+#   theme_minimal()
+
+#(p1 | p4) / (p2 | p5) / (p3 | p6) +
+  #plot_annotation(title = "trial quality by delta_posneg_sb and delta_posneg")
+(p2 | p5) +
+  plot_annotation(title = "trial quality by delta_posneg_sb and delta_posneg")
+
+#----------------------------------------------------------------------------#
+
+
+#----------------------------------------------------------------------------#
+# Tables
+
+
+emas_pre %>%
+  mutate(delta_posneg_sb_bin = cut(delta_posneg_sb, breaks = 20)) %>%
+  group_by(delta_posneg_sb_bin) %>%
+  summarise(
+    n  = n(),
+    n_no_response = sum(rt_quality == "no_response"),
+    pct_no_response = round(n_no_response / n * 100, 1),
+    n_under_200ms = sum(rt_quality == "under_200ms"),
+    pct_under_200ms = round(n_under_200ms / n * 100, 1),
+    n_somehow_over_5000ms = sum(rt_quality == "somehow_over_5000ms"),
+    pct_somehow_over_5000ms  = round(n_somehow_over_5000ms / n * 100, 1)
+  )
+
+
+
+```
+
+### Which affect_z binning is best? 
+```{r}
+colors_affect <- c(
+  "unpleasant" = "#B2182B",
+  "neutral"    = "#808080",
+  "pleasant"   = "#2166AC"
+)
+compare_bins_wide <- bind_rows(
+
+  # ±1.5 SD
+  emas_pre %>%
+    mutate(
+      bins = "-1.5 SD, 0, 1.5 SD",
+      affect_bin = case_when(
+        affect_z <= -1.5 ~ "unpleasant",
+        affect_z >=  1.5 ~ "pleasant",
+        TRUE             ~ "neutral"
+      )
+    ),
+
+  # ±1 SD
+  emas_pre %>%
+    mutate(
+      bins = "-1 SD, 0, 1 SD",
+      affect_bin = case_when(
+        affect_z <= -1 ~ "unpleasant",
+        affect_z >=  1 ~ "pleasant",
+        TRUE           ~ "neutral"
+      )
+    ),
+
+  # ±0.6 SD
+  emas_pre %>%
+    mutate(
+      bins = "-0.6 SD, 0, 0.6 SD",
+      affect_bin = case_when(
+        affect_z <= -0.6 ~ "unpleasant",
+        affect_z >=  0.6 ~ "pleasant",
+        TRUE             ~ "neutral"
+      )
+    )
+) %>%
+  group_by(bins, affect_bin) %>%
+  summarise(
+    n = n(),
+    mean_affect_z = mean(affect_z, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  pivot_wider(
+    names_from = affect_bin,
+    values_from = c(n, mean_affect_z)
+  ) %>%
+  select(
+    bins,
+    n_unpleasant,
+    n_neutral,
+    n_pleasant,
+    mean_affect_z_unpleasant,
+    mean_affect_z_neutral,
+    mean_affect_z_pleasant
+  )
+
+
+
+compare_bins_wide
+#-----------------------------------------------------------------------------#
+# Counts
+plot_counts <- compare_bins_wide %>%
+  select(bins, n_unpleasant, n_neutral, n_pleasant) %>%
+  pivot_longer(
+    cols = c(n_unpleasant, n_neutral, n_pleasant),
+    names_to = "affect_bin",
+    values_to = "count"
+  ) %>%
+  mutate(
+    affect_bin = recode(
+      affect_bin,
+      n_unpleasant = "unpleasant",
+      n_neutral = "neutral",
+      n_pleasant = "pleasant"
+    )
+  )
+
+#-----------------------------#
+plot_counts$affect_bin <- factor(plot_counts$affect_bin, levels = c("unpleasant", "neutral", "pleasant"))
+
+p_counts <- ggplot(plot_counts, aes(x = bins, y = count, fill = affect_bin)) +
+  geom_col(
+    position = position_dodge(width = 0.8),
+    width = 0.7
+  ) +
+  scale_fill_manual(values = colors_affect) +
+  labs(
+    x = "affect_z bin possibility",
+    y = "num trials",
+    fill = "affect_z"
+  ) +
+  ggtitle("num trials") +
+  theme_classic()
+
+
+#-----------------------------------------------------------------------------#
+# Mean
+plot_box <- bind_rows(
+
+  emas_pre %>%
+    mutate(
+      bins = "-1.5 SD, 0, 1.5 SD",
+      affect_bin = case_when(
+        affect_z <= -1.5 ~ "unpleasant",
+        affect_z >=  1.5 ~ "pleasant",
+        TRUE             ~ "neutral"
+      )
+    ),
+
+  emas_pre %>%
+    mutate(
+      bins = "-1 SD, 0, 1 SD",
+      affect_bin = case_when(
+        affect_z <= -1 ~ "unpleasant",
+        affect_z >=  1 ~ "pleasant",
+        TRUE           ~ "neutral"
+      )
+    ),
+
+  emas_pre %>%
+    mutate(
+      bins = "-0.6 SD, 0, 0.6 SD",
+      affect_bin = case_when(
+        affect_z <= -0.6 ~ "unpleasant",
+        affect_z >=  0.6 ~ "pleasant",
+        TRUE             ~ "neutral"
+      )
+    )
+) %>%
+  mutate(
+    affect_bin = factor(
+      affect_bin,
+      levels = c("unpleasant", "neutral", "pleasant")
+    )
+  )
+#-----------------------------#
+p_box <- ggplot(
+  plot_box,
+  aes(x = bins,
+      y = affect_z,
+      fill = affect_bin)
+) +
+  geom_boxplot(
+    position = position_dodge(width = 0.8),
+    width = 0.7,
+    outlier.alpha = 0.2
+  ) +
+  scale_fill_manual(values = colors_affect) +
+  labs(
+    x = "affect_z bin possibility",
+    y = "mean affect_z",
+    fill = "affect_z"
+  ) +
+  ggtitle("distribution of affect_z means by binning possibility") +
+  theme_classic()
+
+#-----------------------------#
+p_counts + p_box
+```
+
+
+
+## Create affect_z_bin
+```{r}
+# Thirds ( affect_z < 0.5 /  affect_z_bin = unpleasant
+#         mid third of affect_z /  affect_z_bin = neutral
+#         lower third of affect_z affect_z > 0.5  /  affect_z_bin = pleasant)
+
+
+# pre
+emas_pre$affect_z_bin <- ifelse(emas_pre$affect_z < -0.6, "unpleasant",
+                           ifelse(emas_pre$affect_z > 0.6, "pleasant", "neutral"))
+emas_pre$affect_z_bin <- factor(emas_pre$affect_z_bin,
+                                  levels = c("unpleasant", "neutral", "pleasant"))
+
+
+
+
+# Counts 
+
+# affect_z_bin counts (pre)
+cat("---pre data---")
+nrow(emas_pre)
+table(emas_pre$affect_z_bin)
+
+```
+
+
+## Create delta_posneg_sb_z_bin
+```{r}
+#-----ranges-------------------------------------------------------------------
+range(emas_pre$delta_posneg_sb_z, na.rm = TRUE)
+#seq(-2.374684, 1.447656)
+range(emas_pre$delta_posneg_sb_z_within, na.rm = TRUE)
+#seq(-2.72815, 1.795692)
+range(emas_pre$delta_posneg_sb, na.rm = TRUE)
+#seq(-100  100)
+range(emas_pre$delta_posneg_sb_normed, na.rm = TRUE)
+# (-0.5 to 0.5)
+#-------bins across person z score--------------------------------------------
+# pre
+emas_pre$delta_posneg_sb_z_bin <- cut(emas_pre$delta_posneg_sb_z, 
+                                        # breaks = seq(-3.15, 1.80, length.out = 12), # 11 bins
+                                         breaks = seq(-2.5, 1.5, length.out = 6), # 5 bins # AS OF 07.08 figure out a way next time to do this so i dont have to manually plug in min and max 
+                                         include.lowest = TRUE)
+#-------bins within person z score---------------------------------------------
+# pre
+emas_pre$delta_posneg_sb_z_within_bin <- cut(emas_pre$delta_posneg_sb_z_within, 
+                                         breaks = seq(-2.8, 1.8, length.out = 6), # 5 bins
+                                         include.lowest = TRUE)
+#-------bins og scale ---------------------------------------------
+
+# pre
+emas_pre$delta_posneg_sb_bin <- cut(emas_pre$delta_posneg_sb, 
+                                         breaks = seq(-100, 100, length.out = 6),# 5 bins
+                                         labels = c("-100 to -60", "-60 to -20", "-20 to 20", "20 to 60", "60 to 100"),
+                                         include.lowest = TRUE)
+# as factor
+
+emas_pre$delta_posneg_sb_bin <- factor(emas_pre$delta_posneg_sb_bin,
+                                   levels = c("-100 to -60", "-60 to -20", "-20 to 20", "20 to 60", "60 to 100"))
+
+
+#-------bins normed (/200) ---------------------------------------------
+
+# pre
+emas_pre$delta_posneg_sb_normed_bin <- cut(emas_pre$delta_posneg_sb_normed, 
+                      breaks = seq(-0.5, 0.5, length.out = 6),
+                      labels = c("-0.5 to -0.3",  
+                                 "-0.3 to -0.1", "-0.1 to 0.1", "0.1 to 0.3", "0.3 to 0.5"),
+                      include.lowest = TRUE)
+# as factor
+emas_pre$delta_posneg_sb_normed_bin <- factor(emas_pre$delta_posneg_sb_normed_bin,
+                                   levels = c("-0.5 to -0.3",  "-0.3 to -0.1", "-0.1 to 0.1", "0.1 to 0.3", "0.3 to 0.5"))
+
+# Counts 
+cat("\n--------delta_posneg_sb_z_bin counts--------\n")
+cat("\n--------------------------------------------\n")
+# delta_posneg_sb_z_bin counts (all)
+
+cat("\n---pre data---\n")
+# delta_posneg_sb_z_bin counts (pre)
+table(emas_pre$delta_posneg_sb_z_bin)
+
+cat("\n \n")
+
+
+cat("\n----delta_posneg_sb_z_within_bin counts----\n")
+cat("\n--------------------------------------------\n")
+
+cat("\n---pre data---\n")
+table(emas_pre$delta_posneg_sb_z_within_bin)
+
+cat("\n \n")
+
+
+cat("\n----------delta_posneg_sb_bin counts--------\n")
+cat("\n--------------------------------------------\n")
+
+cat("\n---pre data---\n")
+table(emas_pre$delta_posneg_sb_bin)
+
+cat("\n \n")
+
+cat("\n----------delta_posneg_sb_normed_bin counts--------\n")
+
+cat("\n---pre data---\n")
+table(emas_pre$delta_posneg_sb_normed_bin)
+
+cat("\n \n")
+
+```
+## Create delta_sb_z_bin
+```{r}
+#-----ranges-------------------------------------------------------------------
+range(emas_pre$delta_sb_z, na.rm = TRUE)
+#(-2, 2)
+#(-2.5, 2.5)
+
+
+range(emas_pre$delta_sb_z_within, na.rm = TRUE)
+#seq(-2.5, 2.5)
+
+range(emas_pre$delta_sb, na.rm = TRUE)
+#(-97, 100)
+
+range(emas_pre$delta_sb_normed, na.rm = TRUE)
+#(-0.5, 0.5)
+
+range(emas_pre$delta_sb_within_subj_normed, na.rm = TRUE)
+
+#-------bins across person z score--------------------------------------------
+
+# pre
+emas_pre$delta_sb_z_bin <- cut(emas_pre$delta_sb_z, 
+                                        # breaks = seq(-3.15, 1.80, length.out = 12), # 11 bins
+                                         breaks = seq(-2, 2, length.out = 6), # 5 bins
+                                         include.lowest = TRUE)
+
+
+
+#-------bins within person z score---------------------------------------------
+
+
+# pre
+emas_pre$delta_sb_z_within_bin <- cut(emas_pre$delta_sb_z_within, 
+                                         breaks = seq(-2.5, 2.5, length.out = 6), # 5 bins
+                                         include.lowest = TRUE)
+
+
+
+
+#-------bins og scale ---------------------------------------------
+
+
+# pre
+emas_pre$delta_sb_bin <- cut(emas_pre$delta_sb, 
+                                         breaks = seq(-100, 100, length.out = 6), # 5 bins
+                                         labels = c("-100 to -60", "-60 to -20", "-20 to 20", "20 to 60", "60 to 100"),
+                                         include.lowest = TRUE)
+
+
+# as factor
+
+emas_pre$delta_sb_bin <- factor(emas_pre$delta_sb_bin,
+                                   levels = c("-100 to -60", "-60 to -20", "-20 to 20", "20 to 60", "60 to 100"))
+
+
+
+#-------bins normed (/200) ---------------------------------------------
+
+
+
+# pre
+emas_pre$delta_sb_normed_bin <- cut(emas_pre$delta_sb_normed, 
+                      breaks = seq(-0.5, 0.5, length.out = 6),
+                      labels = c("-0.5 to -0.3",  
+                                 "-0.3 to -0.1", "-0.1 to 0.1", "0.1 to 0.3", "0.3 to 0.5"),
+                      include.lowest = TRUE)
+
+
+
+
+
+#-------bins within sjuject normed normed FOR PLOTS ---------------------------------------------
+
+
+# pre
+emas_pre$delta_sb_within_subj_normed_bin <- cut(emas_pre$delta_sb_within_subj_normed, 
+              breaks = seq(-0.5, 0.5, length.out = 6),
+              labels = c("-0.5 to -0.3", "-0.3 to -0.1", "-0.1 to 0.1", "0.1 to 0.3", "0.3 to 0.5"),
+              include.lowest = TRUE)
+
+
+
+# as factor
+
+emas_pre$delta_sb_within_subj_normed_bin <- factor(emas_pre$delta_sb_within_subj_normed_bin,
+                                   levels = c("-0.5 to -0.3", "-0.3 to -0.1", "-0.1 to 0.1", "0.1 to 0.3", "0.3 to 0.5"))
+
+
+# Counts 
+cat("\n--------delta_sb_z_bin counts--------\n")
+# delta_posneg_sb_z_bin counts (all)
+cat("\n---pre data---\n")
+# delta_posneg_sb_z_bin counts (pre)
+table(emas_pre$delta_sb_z_bin)
+cat("\n \n")
+
+
+cat("\n----delta_sb_z_within_bin counts----\n")
+cat("\n---pre data---\n")
+table(emas_pre$delta_sb_z_within_bin)
+cat("\n \n")
+
+
+
+cat("\n----------delta_sb_bin counts--------\n")
+cat("\n---pre data---\n")
+table(emas_pre$delta_sb_bin)
+cat("\n \n")
+
+
+cat("\n----------delta_sb_normed_bin counts--------\n")
+cat("\n---pre data---\n")
+table(emas_pre$delta_sb_normed_bin)
+cat("\n \n")
+
+
+
+
+cat("\n----------delta_sb_within_subj_normed_bin counts--------\n")
+cat("\n---pre data---\n")
+table(emas_pre$delta_sb_within_subj_normed_bin)
+cat("\n \n")
+
+```
+
+
+## Create p_chose_pos_by_ema (by pt by ema) ONLY OUT OF POSNEG TRIALS
+```{r}
+
+# pre
+emas_pre <- emas_pre %>% group_by(PUNS_ID, ema_number) %>%
+  mutate(p_chose_pos_by_ema = mean(chose_pos, na.rm = TRUE)) %>%
+  ungroup()
+
+colnames(emas_pre)
+```
+
+## Create p_chose_pos_by_affect_z_bin (by pt by ema) ONLY OUT OF POSNEG TRIALS
+```{r}
+# pre
+emas_pre <- emas_pre %>%
+  group_by(PUNS_ID, affect_z_bin) %>%
+  mutate(p_chose_pos_by_affect_z_bin = mean(chose_pos, na.rm = TRUE)) %>%
+  ungroup()
+
+```
+
+
+## QC
+```{r}
+# before
+table(emas_pre$rt_quality) 
+
+# clean
+emas_pre  <- emas_pre  %>% filter(rt_quality == "valid", !is.na(response), !is.na(rt))
+
+# after
+
+cat("\n-------------\n")
+nrow(emas_pre)
+n_distinct(emas_pre$PUNS_ID)
+
+
+
+#colSums(is.na(emas_pre))
+```
+
+
+## Another Clean for RTs and other NAs and make posneg df
+```{r}
+#-----------------------------------------------------------------------#
+nrow(emas_pre)
+n_distinct(emas_pre$PUNS_ID)
+list(unique(emas_pre$PUNS_ID))
+
+emas_pre <- emas_pre %>%
+         filter(!is.na(affect_z),
+         !is.na(rt),
+         rt >= 200,
+         rt <= 5000)
+nrow(emas_pre)
+n_distinct(emas_pre$PUNS_ID)
+list(unique(emas_pre$PUNS_ID))
+
+
+#-----------------------------------------------------------------------#
+
+posneg_pre <- emas_pre %>%
+  filter(!is.na(chose_pos))
+
+nrow(posneg_pre)
+
+n_distinct(posneg_pre$PUNS_ID)
+list(unique(posneg_pre$PUNS_ID))
+
+table(posneg_pre$valence)
+table(posneg_pre$delta_valence)
+
+```
+
+
+
+
+# Pre-Trip Compliance
+```{r}
+pt_compliance <- emas_pre %>%
+  group_by(PUNS_ID) %>%
+  summarise(
+    n_emas = n_distinct(ema_number),
+    compliance = n_emas / 30
+  ) %>%
+  ungroup() %>%
+  arrange(desc(compliance))
+
+pt_compliance %>%
+  gt() %>%
+  fmt_percent(columns = compliance, decimals = 1) %>%
+  tab_header(title = "Pre-trip EMA compliance by participant") %>%
+  tab_options(table.width = pct(80))
+
+# summary row
+tibble(
+  n_pts = length(pt_compliance$compliance),
+  mean_compliance = mean(pt_compliance$compliance),
+  median_compliance = median(pt_compliance$compliance),
+  min_compliance = min(pt_compliance$compliance),
+  max_compliance = max(pt_compliance$compliance)
+) %>%
+  gt() %>%
+  fmt_percent(columns = mean_compliance:max_compliance, decimals = 1) %>%
+  tab_header(title = "Overall compliance (PRE TRIP ONLY)") %>%
+  tab_options(table.width = pct(80))
+
+
+
+```
+
+
+
+# MODEL: PREDICTED chose_pos ~ delta_posneg_sb by affect_z WITH EFFECT OF TIME (pretrip)
+```{r}
+# Choice
+  # Attempt 1: boundary (singular) fit: see help('isSingular')
+    # choice_model_pretrip <- glmer(chose_pos ~ affect_z + delta_posneg_sb + ema_number +
+    #                            (1 + affect_z + delta_posneg_sb + ema_number | PUNS_ID),
+    #                          data = posneg_pre, family = binomial)
+
+  # Attempt 2: converged and in hypothesized direction. sigificant positive main effect     of affect_z was positive aka in means pts are more likely to describe themselves          with the positive word in a pair when they are in a more pleasant mood than usual.       and when in more unpleasant mood than usual they are more likely to describe            themselves with the negative word in a pair 
+ 
+choice_model_pretrip <- glmer(chose_pos ~ affect_z + delta_posneg_sb + ema_number +
+                                (1 + affect_z + delta_posneg_sb + ema_number || PUNS_ID),
+                              data = posneg_pre, family = binomial)
+
+#v3plot_1b_model
+summary(choice_model_pretrip)
+
+```
+
+
+# MODEL: PREDICTED rt_z ~ delta_posneg_sb by affect_z WITH EFFECT OF TIME (pretrip)
+```{r}
+# RT
+# z score within pt
+posneg_pre <- posneg_pre %>%
+  group_by(PUNS_ID) %>%
+  mutate(rt_s = rt / 1000) %>%
+  mutate(rt_z = as.numeric(scale(rt_s))) %>%
+  ungroup()
+
+# create orthogonal  terms (setting degree to 2 create a lin and quadratic term )
+poly_matrix_rt <- poly(posneg_pre$delta_posneg_sb, degree = 2)
+posneg_pre$delta_posneg_sb_lin  <- poly_matrix_rt[, 1]
+posneg_pre$delta_posneg_sb_quad <- poly_matrix_rt[, 2]
+
+
+  # Attempt 1: Warning :Model failed to converge with 3 negative eigenvalues: -1.6e-01 -2.8e-01 -4.4e-01 and
+              # boundary (singular) fit: see help('isSingular')
+    # rt_model_pretrip <- lmerTest::lmer(
+    #   rt_z ~ affect_z * delta_posneg_sb_lin + delta_posneg_sb_quad + ema_number +
+    #     (1 + affect_z * delta_posneg_sb_lin + delta_posneg_sb_quad + ema_number | PUNS_ID),
+    #   data = posneg_pre
+    # )
+  
+  # Attempt 2: Warning :Model failed to converge with max|grad| = 0.420296 (tol = 0.002, component 1) and
+              # Warning :Model is nearly unidentifiable: very large eigenvalue 
+                  # - Rescale variables?;Model is nearly unidentifiable: large eigenvalue ratio
+                  # - Rescale variables?
+    # rt_model_pretrip <- lmerTest::lmer(
+    #   rt_z ~ affect_z * delta_posneg_sb_lin + delta_posneg_sb_quad + ema_number +
+    #     (1 + affect_z * delta_posneg_sb_lin + delta_posneg_sb_quad + ema_number || PUNS_ID),
+    #   data = posneg_pre
+    # )
+
+  # Attempt 3: Warning :Model failed to converge with max|grad| = 0.364055 (tol = 0.002, component 1) and
+              # Warning :Model is nearly unidentifiable: very large eigenvalue 
+                  # - Rescale variables?;Model is nearly unidentifiable: large eigenvalue ratio
+                  # - Rescale variables?
+    # rt_model_pretrip <- lmerTest::lmer(
+    #   rt_z ~ affect_z * delta_posneg_sb_lin + delta_posneg_sb_quad + ema_number +
+    #     (1 + affect_z + delta_posneg_sb_lin + delta_posneg_sb_quad + ema_number || PUNS_ID),
+    #   data = posneg_pre)
+  
+  # Attempt 4: 
+      rt_model_pretrip <- lmerTest::lmer(
+        rt_z ~ affect_z * delta_posneg_sb_lin + delta_posneg_sb_quad + ema_number +
+          (1 + affect_z + delta_posneg_sb_lin + delta_posneg_sb_quad || PUNS_ID),
+        data = posneg_pre)
+summary(rt_model_pretrip)
+
+```
+
+
+
+# PREDICTED CHOICE AND RT MODEL TABLES
+```{r}
+#-------------------------------------------------------------------------------#
+# CHOICE
+choice_model_pretrip_tbl <- tbl_regression(choice_model_pretrip)
+
+choice_model_pretrip_tbl_pretty <-
+  tbl_merge(
+    tbls = list(choice_model_pretrip_tbl),
+    tab_spanner = c("**Pre-trip Data only**")
+  )
+#choice_model_pretrip_tbl_pretty
+
+#-------------------------------------------------------------------------------#
+# RT
+
+rt_model_pretrip_tbl <- tbl_regression(rt_model_pretrip)
+
+rt_model_pretrip_tbl_pretty <-
+  tbl_merge(
+    tbls = list(rt_model_pretrip_tbl),
+    tab_spanner = c("**Pre-trip Data only**")
+  )
+#rt_model_pretrip_tbl_pretty
+
+
+
+#-------------------------------------------------------------------------------#
+# combined
+combined_model_tbl <- tbl_merge(
+  tbls = list(choice_model_pretrip_tbl, rt_model_pretrip_tbl),
+  tab_spanner = c("**Predicted Choice**", "**Predicted RT (ms)**")
+)
+
+# Print the table
+combined_model_tbl
+```
+
+
+
+
+# PROCESSED DF 
+```{r}
+
+# define folder
+processed_folder <- "processed_data"
+
+# make it if dont exist
+if (!dir.exists(processed_folder)) dir.create(processed_folder)
+
+# build filename
+filename_processed <- ("processed_empirical_data_posneg.csv")
+filename_processed_full <- paste0("processed_empirical_data_full.csv")
+
+# export
+write_csv(posneg_pre, file.path(processed_folder, filename_processed))
+
+write_csv(emas_pre, file.path(processed_folder, filename_processed_full))
+
+```
+
+
+
+# EXPORT CSVS FOR MODELING (WITH ALL TRIAL TYPES) AT THIS POINT
+```{r}
+# mass comment/uncomment: command + shift + C
+
+
+
+# prep for hssm
+# emas_pre <- emas_pre %>%
+#   mutate(
+#     response = if_else(response == 0, -1, response),
+#     rt = as.numeric(rt),
+#     PUNS_ID = as.character(PUNS_ID)
+#   ) %>%
+#   rename(subject = PUNS_ID)
+
+emas_pre <- emas_pre %>%
+  mutate(
+    response = if_else(response == 0 | response == -1, -1, 1),
+    rt = as.numeric(rt),
+    PUNS_ID = as.character(PUNS_ID)
+  ) %>%
+  rename(subject = PUNS_ID)
+
+table(emas_pre$response)
+#-----------------------------------------------------------------------------#
+
+# define folder
+folder <- "hssm_ema_dfs_for_cluster"
+
+# make it if dont exist
+
+if (!dir.exists(folder)) dir.create(folder)
+
+# build filname
+filename_pre <- "hssm_ema_df_pre.csv"
+
+# export
+write_csv(emas_pre, file.path(folder, filename_pre))
+#str(emas_pre)
+```
+
+

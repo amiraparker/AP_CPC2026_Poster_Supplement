@@ -1,0 +1,52 @@
+"trial_type","trial_index","time_elapsed","internal_node_id","subject_id","baseline_date","session_day","session_slot","experiment_start","browser","screen_width","screen_height","timezone_offset","view_history","rt","stimulus","slider_start","response","left","right","valence","abs_diff","pair_id"
+"pavlovia","0","1032","0.0-0.0","R_6ikWoGefPJUA4mK","2025-09-22","day1","morning","2025-09-22T04:39:10.753Z","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36","477","774","240","","","","","","","","","",""
+"instructions","1","12632","0.0-1.0","R_6ikWoGefPJUA4mK","2025-09-22","day1","morning","2025-09-22T04:39:10.753Z","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36","477","774","240","[{""page_index"":0,""viewing_time"":11599}]","11599","","","","","","","",""
+"html-slider-response","2","19045","0.0-2.0-0.0","R_6ikWoGefPJUA4mK","2025-09-22","day1","morning","2025-09-22T04:39:10.753Z","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36","477","774","240","","6410","
+        <div style=""display:flex;justify-content:space-between;margin-bottom:30px;"">
+          <div style=""text-align:center;""><h3>excited</h3></div>
+          <div style=""font-size:24px;align-self:center;"">vs</div>
+          <div style=""text-align:center;""><h3>helper</h3></div>
+        </div>
+        <p>Which word describes you more?</p>
+      ","50","13","excited","helper","PosPos","69","excited|helper"
+"html-slider-response","3","21111","0.0-2.0-0.1","R_6ikWoGefPJUA4mK","2025-09-22","day1","morning","2025-09-22T04:39:10.753Z","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36","477","774","240","","2064","
+        <div style=""display:flex;justify-content:space-between;margin-bottom:30px;"">
+          <div style=""text-align:center;""><h3>prick</h3></div>
+          <div style=""font-size:24px;align-self:center;"">vs</div>
+          <div style=""text-align:center;""><h3>helper</h3></div>
+        </div>
+        <p>Which word describes you more?</p>
+      ","50","9","prick","helper","PosNeg","62","helper|prick"
+"html-slider-response","4","22804","0.0-2.0-0.2","R_6ikWoGefPJUA4mK","2025-09-22","day1","morning","2025-09-22T04:39:10.753Z","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36","477","774","240","","1690","
+        <div style=""display:flex;justify-content:space-between;margin-bottom:30px;"">
+          <div style=""text-align:center;""><h3>vermin</h3></div>
+          <div style=""font-size:24px;align-self:center;"">vs</div>
+          <div style=""text-align:center;""><h3>helper</h3></div>
+        </div>
+        <p>Which word describes you more?</p>
+      ","50","10","vermin","helper","PosNeg","70","helper|vermin"
+"html-slider-response","5","24661","0.0-2.0-0.3","R_6ikWoGefPJUA4mK","2025-09-22","day1","morning","2025-09-22T04:39:10.753Z","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36","477","774","240","","1855","
+        <div style=""display:flex;justify-content:space-between;margin-bottom:30px;"">
+          <div style=""text-align:center;""><h3>excited</h3></div>
+          <div style=""font-size:24px;align-self:center;"">vs</div>
+          <div style=""text-align:center;""><h3>prick</h3></div>
+        </div>
+        <p>Which word describes you more?</p>
+      ","50","66","excited","prick","PosNeg","7","excited|prick"
+"html-slider-response","6","26530","0.0-2.0-0.4","R_6ikWoGefPJUA4mK","2025-09-22","day1","morning","2025-09-22T04:39:10.753Z","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36","477","774","240","","1867","
+        <div style=""display:flex;justify-content:space-between;margin-bottom:30px;"">
+          <div style=""text-align:center;""><h3>vermin</h3></div>
+          <div style=""font-size:24px;align-self:center;"">vs</div>
+          <div style=""text-align:center;""><h3>prick</h3></div>
+        </div>
+        <p>Which word describes you more?</p>
+      ","50","16","vermin","prick","NegNeg","8","prick|vermin"
+"html-slider-response","7","28731","0.0-2.0-0.5","R_6ikWoGefPJUA4mK","2025-09-22","day1","morning","2025-09-22T04:39:10.753Z","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36","477","774","240","","2200","
+        <div style=""display:flex;justify-content:space-between;margin-bottom:30px;"">
+          <div style=""text-align:center;""><h3>vermin</h3></div>
+          <div style=""font-size:24px;align-self:center;"">vs</div>
+          <div style=""text-align:center;""><h3>excited</h3></div>
+        </div>
+        <p>Which word describes you more?</p>
+      ","50","10","vermin","excited","PosNeg","1","excited|vermin"
+"instructions","8","30969","0.0-3.0","R_6ikWoGefPJUA4mK","2025-09-22","day1","morning","2025-09-22T04:39:10.753Z","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36","477","774","240","[{""page_index"":0,""viewing_time"":2236}]","2236","","","","","","","",""

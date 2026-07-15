@@ -1,0 +1,707 @@
+---
+title: "SCRIPT 1 -- DATA PROCESSING PT 1: Make ema dfs (sjdm task data only)"
+date: "07.08.2026"
+format:
+  html:
+    code-fold: true
+    embed-resources: true
+    toc: true
+    toc-depth: 3
+    df-print: paged
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+set dir
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = here::here())
+```
+
+display
+```{css, echo=FALSE}
+pre { max-width: 100%; overflow-x: auto; }
+```
+
+
+### source scripts with functions 
+```{r, message=FALSE, warning=FALSE}
+options(repos = c(CRAN = "https://cloud.r-project.org/"))
+#setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+source("Functions/packages.R")
+source("Functions/make_ema_sjdm_dfs.R")
+
+
+```
+
+### load packages 
+```{r, message=FALSE, warning=FALSE}
+loadpackages()
+conflicts_prefer(dplyr::lag)
+conflicts_prefer(data.table::first)
+conflicts_prefer(rstatix::filter)
+conflicts_prefer(dplyr::rename)
+conflicts_prefer(dplyr::summarise)
+conflicts_prefer(dplyr::summarize)
+conflicts_prefer(dplyr::mutate)
+conflicts_prefer(dplyr::arrange)
+conflicts_prefer(dplyr::count)
+conflicts_prefer(dplyr::filter)
+
+```
+
+
+
+## Load sjdm ema data
+```{r}
+# Set location of data (whenever there is a new data pull from pavlovia will have to update the date of the folder to match)
+  # This data is just direct copy of "data" folder from ema task pavlovia proj
+#data_folder_sjdm <- "sjdm_raw-data_5.19"
+#data_folder_sjdm <- "sjdm_raw-data_5.27"
+#data_folder_sjdm <- "sjdm_raw-data_6.24"
+#data_folder_sjdm <- "sjdm_raw-data_7.08"
+
+
+
+data_folder_sjdm <- "sjdm_raw-data_07.08"
+
+
+all_files_sjdm <- list.files(data_folder_sjdm, pattern = "\\.csv$", full.names = TRUE)
+
+
+# N files total
+cat("total N of CSV files:\n")
+print(length(all_files_sjdm))
+
+#getwd()
+```
+
+## Clean old task versions
+```{r}
+# table with one row per file and for each fiel the ptid, n_cols, and colnames 
+
+ema_sjdm_pt_csv_structure_table <- map_dfr(all_files_sjdm, function(f) {
+  tmp <- read_csv(f, n_max = 1, show_col_types = FALSE) # read first row of each file to get col names and what data type each col is 
+  tibble(
+    file = basename(f), #ths just removes name of the folder from the path 
+    pt_id = str_extract(basename(f), "(?<=EMA_)[^_]+"), # Pull out pt id from filename
+    n_cols = ncol(tmp), # list how many cols the file has
+    # paste all the column names into one string, separated by commas
+    col_names = paste(names(tmp), collapse = ", ") # for each file, make a col that has all the colnames in the file listed in a string 
+  )
+})
+
+#print(ema_sjdm_pt_csv_structure_table)
+
+
+# identify all the unique csvs structures and which pts have their csvs structured like what 
+ema_sjdm_unique_csv_structures <- ema_sjdm_pt_csv_structure_table %>%
+  group_by(n_cols, col_names) %>%
+  summarise(
+    n_files = n(),
+    pt_ids = paste(sort(unique(pt_id)), collapse = ", "),
+    n_pts = length(unique(pt_id)),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(n_files)) %>%
+  mutate(structure_label = paste0("s", row_number(), "_", n_cols, "col")) #name each structure type by num cols.
+
+# ema_sjdm_unique_csv_structures %>% gt() %>% 
+#   tab_header(title = "all the unique csvs structures in ema sjdm raw data files",
+#              subtitle = "num files per each structure type and which pts have their csvs structured like what")
+#list(ema_sjdm_unique_csv_structures$col_names)
+#list(ema_sjdm_unique_csv_structures$n_files)
+#list(unique(ema_sjdm_unique_csv_structures$pt_ids))
+
+# tag each file with strucyre label # THIS IS WHAT WILL USE FOR ACTUALLY CLEANING AND READING IN THE DFS
+files_with_structure <- ema_sjdm_pt_csv_structure_table %>%
+  left_join(
+    ema_sjdm_unique_csv_structures %>% select(n_cols, col_names, structure_label),
+    by = c("n_cols", "col_names")
+  ) %>%
+  mutate(file_date = as.Date(str_extract(file, "\\d{4}-\\d{2}-\\d{2}")))
+#files_with_structure
+#files_with_structure %>% count(structure_label)
+
+
+# table that arranges the cols in each structure side by side 
+data_structures <- ema_sjdm_unique_csv_structures %>%
+  mutate(col_name = strsplit(col_names, ", ")) %>%
+  select(structure_label, col_name) %>%
+  unnest(col_name) %>%
+  group_by(structure_label) %>%
+  mutate(colnumber = row_number()) %>%
+  ungroup() %>%
+  pivot_wider(names_from = structure_label, values_from = col_name)
+
+#print(data_structures)
+# data_structures %>% gt() %>%
+#   sub_missing(missing_text = "") %>%
+#   tab_header(
+#     title = "the colnames within each of the 9 CSV data structure types",
+#     subtitle = "colnames within each of the data structure types r listed vertically "
+#   )
+
+# For each file structure type, randomly look at 2 (can change to look through more like 10 which is better to get comprehensive look but keeping 2 for now since this is the max amt of files and  rows for each file structure that will print without having to scroll) 
+set.seed(1)
+sampled_peek <- files_with_structure %>%
+  group_by(structure_label) %>%
+  slice_sample(n = 2) %>%
+  ungroup() %>%
+  mutate(full_path = file.path(data_folder_sjdm, file)) %>%
+  mutate(file_data = map(full_path, ~ read_csv(.x, n_max = 3, show_col_types = FALSE) %>%
+                           mutate(across(everything(), as.character)))) %>%
+  select(structure_label, pt_id, file, file_data) %>%
+  unnest(file_data) %>%
+  arrange(structure_label, pt_id, file)
+
+#print(sampled_peek)
+# sampled_peek %>% gt() %>%
+#   tab_header(
+#     title = "each of the 9 CSV data structure types list 3 rows from 2 random files",
+#     subtitle = "to look through to get an idea of what each file looks like"
+#   )
+
+# Cleaner summary table for each file structure type (based on what i see )
+ema_sjdm_structure_summary <- files_with_structure %>%
+  group_by(structure_label, n_cols) %>%
+  summarise(
+    n_files = n(),
+    first_file_date = min(file_date),
+    last_file_date = max(file_date),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(n_files))
+
+# ema_sjdm_structure_summary %>% gt() %>%
+#   tab_header(
+#     title = "list of 9 filetypes with dates")
+
+# structure_descriptions col describes what each data structure is based off what data and cols is in each (ref dfs sampled_peek and data_structures) and which pts took each structure type (ref df ema_sjdm_unique_csv_structures) and date (if after study launch ema_sjdm_structure_summary)
+
+structure_descriptions <- tibble(
+  structure_label = c("s1_33col", "s2_6col", "s3_32col", "s4_32col",
+                      "s5_23col", "s6_31col", "s7_23col", "s8_31col", "s9_31col"),
+  
+ description = c(
+    #s1_33col 
+    "real pt data (first file was from 2026-02-05 (when study launched) and latest from 2026-05-19). idnetifier is PUNS_ID, usses html-keyboard-response, has all new session tracking cols that i added in most recent index file version (session_number, session_phase, ema_start_date, ema_post_start_date))",
+    
+    #s2_6col 
+    "aborted ema sessions (first file from 2026-02-09 and lates from 2026-05-19). pt opened link but didnt complete task",
+    
+    #s3_32col 
+    "pre study-launch testing (first file from 2025-11-11 latest file from 2026-01-27) taken by 11 testers (puns team + fabla dev team) (9000, 9001, 9002, 9003, 9005, 9006, 9008, 9009, 9010, 9998, 9999)",
+    
+    #s4_32col 
+    "pre study-launch testing (first file from 2025-09-24 latest file from 2025-11-11) older version of task while i was still building out so used html-button-response, taken by me with ids that I thought I could use for testing (1001-1012, 1013)  (beofre i realized i had to use ids that start with 9000 since real pts would start with 1000) and 4 fabla dev testing ids (9000, 9005, 9006, 9008)",
+    
+    #s5_23col 
+    "pre study-launch testing (only instances from 2025-09-22) taken by me only once (R_ qualtrics id)",
+    
+    #s6_31col 
+    "testing that i did post launch to test if the fabla webform was working (only instances from 2026-02-05) taken by 1 fabla dev tester (9005) and me (TESTAP999)",
+    
+    #s7_23col
+    "pre study-launch testing (only instances from 2025-09-22) again outdated form of task so variables were old taken by me only once (R_ qualtrics id)",
+    
+    #s8_31col 
+    "pre study-launch testing (only instance from 2025-11-10) taken by me only once using fabla dev testing id: 9005",
+    
+
+    #s9_31col 
+    "pre study launch testing (only instances from 2025-09-24) taken by me only once (was using R_ qualtircs id bc hadnt configured PUNS_ID yet)"
+  )
+)
+
+ema_sjdm_structure_summary <- ema_sjdm_structure_summary %>%
+  left_join(structure_descriptions, by = "structure_label")
+
+ema_sjdm_structure_summary %>% gt() %>%
+  tab_header(
+    title = "list of 9 filetypes with with descriptions of why each is different")
+```
+
+summarize structure of csvs from diff task types
+```{r}
+ema_sjdm_structure_summary_final <- ema_sjdm_structure_summary %>%
+  select(structure_label, n_files, description) %>%
+  mutate(
+    full_structure_label = c(
+      "real_study_data_finalized_task", #s1_33col
+      "aborted_ema_session_no_trials", #s2_6col
+      "prestudylaunch_v1", #s3_32col
+      "prestudylaunch_v2", #s4_32col
+      "prestudylaunch_v3", #s5_23col
+      "postlaunch_testing", #s6_31col
+      "prestudylaunch_v4", #s7_23col
+      "prestudylaunch_v5", #s8_31col
+      "prestudylaunch_v6" #s9_31col
+    )
+  ) %>%
+  select(structure_label, full_structure_label, n_files, description)
+
+# ema_sjdm_structure_summary_final %>%
+#   gt() %>%
+#   tab_options(table.width = pct(80)) %>%
+#   tab_header(
+#     title = "EMA SJDM CSV File Structures: Type and Description"
+#   )
+```
+
+
+
+
+## Cleaning part 1 (clean old task versions + test pts + technical issues) 
+```{r}
+# Cleaningin + tibble checks 
+files_clean_pts <- files_with_structure %>%
+  left_join(
+    ema_sjdm_structure_summary_final %>% select(structure_label, full_structure_label),
+    by = "structure_label"
+  )
+files_clean_pts
+#-----------------------------------------------------------------------------#
+# B4 any cleaning
+tibble(
+  step = "b4 any cleaning",
+  n_files = nrow(files_clean_pts),
+  n_pts = length(unique(files_clean_pts$pt_id)),
+  pt_ids = paste(sort(unique(files_clean_pts$pt_id)), collapse = ", "),
+ structure_types_and_counts = files_clean_pts %>%
+  count(full_structure_label, sort = TRUE) %>%
+  mutate(line = paste0(full_structure_label, ": ", n)) %>%
+  pull(line) %>%
+  paste(collapse = "<br>")
+) %>% gt()  %>%
+  fmt_markdown(columns = structure_types_and_counts)  %>%
+  tab_options(table.width = pct(80))
+#-----------------------------------------------------------------------------#
+files_clean_pts <- files_clean_pts %>% remove_test_ids()
+# after remove_test_ids
+tibble(
+  step = "after remove_test_ids",
+  n_files = nrow(files_clean_pts),
+  n_pts = length(unique(files_clean_pts$pt_id)),
+  pt_ids = paste(sort(unique(files_clean_pts$pt_id)), collapse = ", "),
+ structure_types_and_counts = files_clean_pts %>%
+  count(full_structure_label, sort = TRUE) %>%
+  mutate(line = paste0(full_structure_label, ": ", n)) %>%
+  pull(line) %>%
+  paste(collapse = "<br>")
+) %>% gt()  %>%
+  fmt_markdown(columns = structure_types_and_counts)  %>%
+  tab_options(table.width = pct(80))
+#-----------------------------------------------------------------------------#
+files_clean_pts <- files_clean_pts %>% remove_R_ids()
+# after remove_R_ids
+tibble(
+  step = "after remove_R_ids",
+  n_files = nrow(files_clean_pts),
+  n_pts = length(unique(files_clean_pts$pt_id)),
+  pt_ids = paste(sort(unique(files_clean_pts$pt_id)), collapse = ", "),
+ structure_types_and_counts = files_clean_pts %>%
+  count(full_structure_label, sort = TRUE) %>%
+  mutate(line = paste0(full_structure_label, ": ", n)) %>%
+  pull(line) %>%
+  paste(collapse = "<br>")
+) %>% gt()  %>%
+  fmt_markdown(columns = structure_types_and_counts)  %>%
+  tab_options(table.width = pct(80))
+#-----------------------------------------------------------------------------#
+files_clean_pts <- files_clean_pts %>% remove_fabla_dev_testers()
+# after remove_fabla_dev_testers
+tibble(
+  step = "after remove_fabla_dev_testers",
+  n_files = nrow(files_clean_pts),
+  n_pts = length(unique(files_clean_pts$pt_id)),
+  pt_ids = paste(sort(unique(files_clean_pts$pt_id)), collapse = ", "),
+ structure_types_and_counts = files_clean_pts %>%
+  count(full_structure_label, sort = TRUE) %>%
+  mutate(line = paste0(full_structure_label, ": ", n)) %>%
+  pull(line) %>%
+  paste(collapse = "<br>")
+) %>% gt()  %>%
+  fmt_markdown(columns = structure_types_and_counts)  %>%
+  tab_options(table.width = pct(80))
+#-----------------------------------------------------------------------------#
+files_clean_pts <- files_clean_pts %>% remove_amira_postlaunch_tests()
+# after remove_amira_postlaunch_tests
+tibble(
+  step = "after remove_amira_postlaunch_tests",
+  n_files = nrow(files_clean_pts),
+  n_pts = length(unique(files_clean_pts$pt_id)),
+  pt_ids = paste(sort(unique(files_clean_pts$pt_id)), collapse = ", "),
+ structure_types_and_counts = files_clean_pts %>%
+  count(full_structure_label, sort = TRUE) %>%
+  mutate(line = paste0(full_structure_label, ": ", n)) %>%
+  pull(line) %>%
+  paste(collapse = "<br>")
+) %>% gt()  %>%
+  fmt_markdown(columns = structure_types_and_counts)  %>%
+  tab_options(table.width = pct(80))
+#-----------------------------------------------------------------------------#
+files_clean_pts <- files_clean_pts %>% remove_pts_with_severe_task_issues()
+# after remove_pts_with_severe_task_issues
+tibble(
+  step = "after remove_pts_with_severe_task_issues",
+  n_files = nrow(files_clean_pts),
+  n_pts = length(unique(files_clean_pts$pt_id)),
+  pt_ids = paste(sort(unique(files_clean_pts$pt_id)), collapse = ", "),
+ structure_types_and_counts = files_clean_pts %>%
+  count(full_structure_label, sort = TRUE) %>%
+  mutate(line = paste0(full_structure_label, ": ", n)) %>%
+  pull(line) %>%
+  paste(collapse = "<br>")
+) %>% gt()  %>%
+  fmt_markdown(columns = structure_types_and_counts)  %>%
+  tab_options(table.width = pct(80))
+
+#-----------------------------------------------------------------------------#
+files_clean_pts <- files_clean_pts %>% remove_pts_with_severe_task_issues()
+# after clean_pts_still_in_pre_trip
+tibble(
+  step = "after remove_pts_with_severe_task_issues",
+  n_files = nrow(files_clean_pts),
+  n_pts = length(unique(files_clean_pts$pt_id)),
+  pt_ids = paste(sort(unique(files_clean_pts$pt_id)), collapse = ", "),
+ structure_types_and_counts = files_clean_pts %>%
+  count(full_structure_label, sort = TRUE) %>%
+  mutate(line = paste0(full_structure_label, ": ", n)) %>%
+  pull(line) %>%
+  paste(collapse = "<br>")
+) %>% gt()  %>%
+  fmt_markdown(columns = structure_types_and_counts)  %>%
+  tab_options(table.width = pct(80))
+
+```
+
+## Cleaning part 2 (clean old files that should not be in dataset) 
+```{r}
+# Seems like even after last cleaning step there are 2 files using this data dtructure... take closer look 
+files_clean_pts %>%
+  filter(full_structure_label == "prelaunch_dev_test_button") %>%
+  select(pt_id, file, file_date, structure_label, full_structure_label) %>% gt()
+
+# ... okay these files are from pt_id 1013... file date is from october which is way before study launch... so seems like i also used 1013 to test accidently 
+
+# Clean out these exact files (accidently tested under ID of an actual pt well b4 study launch)
+  # for pt 1013 2-SRET-PUNS-EMA_1013_SESSION_2025-10-08_18h19.29.858.csv and 2-SRET-PUNS-EMA_1013_SESSION_2025-10-14_18h55.45.451.csv
+files_clean_pts <- files_clean_pts %>% remove_old_files()
+# after remove_old_files
+tibble(
+  step = "after remove_old_files",
+  n_files = nrow(files_clean_pts),
+  n_pts = length(unique(files_clean_pts$pt_id)),
+  pt_ids = paste(sort(unique(files_clean_pts$pt_id)), collapse = ", "),
+ structure_types_and_counts = files_clean_pts %>%
+  count(full_structure_label, sort = TRUE) %>%
+  mutate(line = paste0(full_structure_label, ": ", n)) %>%
+  pull(line) %>%
+  paste(collapse = "<br>")
+) %>% gt()  %>%
+  fmt_markdown(columns = structure_types_and_counts)  %>%
+  tab_options(table.width = pct(80))
+#-----------------------------------------------------------------------------#
+# Clea 1015's files from before they enrolled (had to push back trip date)
+files_clean_pts <- files_clean_pts %>% remove_1015_prereenrollment()
+# after remove_1015_prereenrollment
+tibble(
+  step = "after remove_1015_prereenrollment",
+  n_files = nrow(files_clean_pts),
+  n_pts = length(unique(files_clean_pts$pt_id)),
+  pt_ids = paste(sort(unique(files_clean_pts$pt_id)), collapse = ", ")
+) %>% gt() %>% tab_options(table.width = pct(80))
+
+#-----------------------------------------------------------------------------#
+# Clean 1086's files from before they enrolled (had to push back trip date)
+files_clean_pts <- files_clean_pts %>% remove_1086_may11_files()
+# after remove_1086_may11_files
+tibble(
+  step = "after remove_1086_may11_files",
+  n_files = nrow(files_clean_pts),
+  n_pts = length(unique(files_clean_pts$pt_id)),
+  pt_ids = paste(sort(unique(files_clean_pts$pt_id)), collapse = ", ")
+) %>% gt() %>% tab_options(table.width = pct(80))
+
+
+#-----------------------------------------------------------------------------#
+# Clean 1027's files from before they enrolled (had to push back trip date)
+files_clean_pts <- files_clean_pts %>% remove_1027_march22_files()
+# after remove_1027_march22_files
+tibble(
+  step = "after remove_1027_march22_files",
+  n_files = nrow(files_clean_pts),
+  n_pts = length(unique(files_clean_pts$pt_id)),
+  pt_ids = paste(sort(unique(files_clean_pts$pt_id)), collapse = ", ")
+) %>% gt() %>% tab_options(table.width = pct(80))
+
+```
+
+
+
+## Cleaning part 3 (clean aborted EMA sessions) 
+```{r}
+files_clean_pts <- files_clean_pts %>% remove_aborted_sessions()
+# after remove_aborted_sessions
+tibble(
+  step = "after remove_aborted_sessions",
+  n_files = nrow(files_clean_pts),
+  n_pts = length(unique(files_clean_pts$pt_id)),
+  pt_ids = paste(sort(unique(files_clean_pts$pt_id)), collapse = ", "),
+ structure_types_and_counts = files_clean_pts %>%
+  count(full_structure_label, sort = TRUE) %>%
+  mutate(line = paste0(full_structure_label, ": ", n)) %>%
+  pull(line) %>%
+  paste(collapse = "<br>")
+) %>% gt()  %>%
+  fmt_markdown(columns = structure_types_and_counts)  %>%
+  tab_options(table.width = pct(80))
+```
+
+
+## Combine valid files 
+```{r}
+ema_sjdm_all <- map_dfr(files_clean_pts$file, function(f) {
+  full_path <- file.path(data_folder_sjdm, f)
+  read_csv(full_path, show_col_types = FALSE) %>%
+    mutate(
+      source_file = f,
+      file_date = as.Date(str_extract(f, "\\d{4}-\\d{2}-\\d{2}"))
+    )
+})
+
+tibble(
+  step = "combined all valid files",
+  n_rows = nrow(ema_sjdm_all),
+  n_pts = length(unique(ema_sjdm_all$PUNS_ID)),
+  pt_ids = paste(sort(unique(as.character(ema_sjdm_all$PUNS_ID))), collapse = ", ")
+) %>% gt() %>% tab_options(table.width = pct(80))
+```
+### Fix start dates
+```{r}
+# CHECK does any pt carry more than one ema start date 
+ema_sjdm_all %>%
+  distinct(PUNS_ID, ema_start_date, ema_post_start_date) %>%
+  count(PUNS_ID) %>%
+  filter(n > 1) %>%
+  gt() %>%
+  tab_header(title = "pts with >1 distinct start-date pair (pts who changed ema date in fabla. need to make consistent)")
+
+
+# use latest start date (since most trip dates were pushed back)
+ema_sjdm_all <- ema_sjdm_all %>%
+  group_by(PUNS_ID) %>%
+  mutate(
+    ema_start_date = max(ema_start_date, na.rm = TRUE),
+    ema_post_start_date = max(ema_post_start_date, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# should be empty 
+ema_sjdm_all %>%
+  distinct(PUNS_ID, ema_start_date, ema_post_start_date) %>%
+  count(PUNS_ID) %>%
+  filter(n > 1)
+```
+
+
+# Cleaning part 4 (remove trials without data + cleaning needed for data)
+```{r}
+#str(ema_sjdm_all)
+#unique(ema_sjdm_all$trial_type)
+#unique(ema_sjdm_all$which_experiment_phase)
+tibble(
+  step = "before keep_only_pairing_trials",
+  n_rows = nrow(ema_sjdm_all),
+  n_pts = length(unique(ema_sjdm_all$PUNS_ID))
+) %>% gt() %>% tab_options(table.width = pct(80))
+
+ema_sjdm_all %>%
+  count(trial_type, which_experiment_phase) %>%
+  arrange(desc(n)) %>% gt()
+
+# filter to just pairings trials 
+ema_sjdm_all <- ema_sjdm_all %>% keep_only_pairing_trials()
+
+
+tibble(
+  step = "after keeping only pairing choice trials",
+  n_rows = nrow(ema_sjdm_all),
+  n_pts = length(unique(ema_sjdm_all$PUNS_ID)),
+  n_sessions = nrow(ema_sjdm_all) / 24
+) %>% gt() %>% tab_options(table.width = pct(80))
+
+# count pairing trials per session (one row per pt × session)
+trials_per_session <- ema_sjdm_all %>%
+  group_by(PUNS_ID, session_number, session_phase) %>%
+  summarise(
+    n_trials = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(PUNS_ID, session_number)
+
+
+
+```
+# Clean duplicate files 
+```{r}
+
+# remove duplicate files 
+ema_sjdm_all <- ema_sjdm_all %>%
+  mutate(session_phase_and_num = paste(session_phase, session_number, sep = "_"))
+
+
+ema_sjdm_all <- ema_sjdm_all %>%
+  group_by(PUNS_ID, session_phase_and_num) %>%
+  mutate(
+    n_files_per_session = n_distinct(source_file),
+    n_trials_per_session = n(),
+    is_duplicate_session = n_files_per_session > 1
+  ) %>%
+  ungroup()
+
+
+ema_sjdm_all <- ema_sjdm_all %>%
+  group_by(PUNS_ID, session_phase_and_num, source_file) %>%
+  mutate(n_trials_per_file = n()) %>%
+  ungroup()
+
+
+df_duplicates <- ema_sjdm_all %>%
+  filter(is_duplicate_session == TRUE)
+
+tibble(
+  step = "before duplicate removal",
+  n_rows = nrow(ema_sjdm_all),
+  n_unique_sessions = n_distinct(
+    ema_sjdm_all$PUNS_ID,
+    ema_sjdm_all$session_phase_and_num
+  ),
+  n_duplicate_sessions = ema_sjdm_all %>%
+    filter(is_duplicate_session) %>%
+    distinct(PUNS_ID, session_phase_and_num) %>%
+    nrow(),
+  n_pts = n_distinct(ema_sjdm_all$PUNS_ID)
+) %>%
+  gt() %>%
+  tab_options(table.width = pct(80))
+
+ema_sjdm_all <- ema_sjdm_all %>%
+  arrange(PUNS_ID, session_phase_and_num, experiment_start) %>%
+  group_by(PUNS_ID, session_phase_and_num) %>%
+  filter(source_file == first(source_file)) %>%
+  ungroup()
+
+
+# recalculate AFTER removal
+ema_sjdm_all <- ema_sjdm_all %>%
+  group_by(PUNS_ID, session_phase_and_num) %>%
+  mutate(
+    n_files_per_session = n_distinct(source_file),
+    n_trials_per_session = n(),
+    is_duplicate_session = n_files_per_session > 1
+  ) %>%
+  ungroup()
+
+# after table
+tibble(
+  step = "after duplicate removal",
+  n_rows = nrow(ema_sjdm_all),
+  n_unique_sessions = n_distinct(
+    ema_sjdm_all$PUNS_ID,
+    ema_sjdm_all$session_phase_and_num
+  ),
+  n_duplicate_sessions = ema_sjdm_all %>%
+    filter(is_duplicate_session) %>%
+    distinct(PUNS_ID, session_phase_and_num) %>%
+    nrow(),
+  n_pts = n_distinct(ema_sjdm_all$PUNS_ID)
+) %>%
+  gt() %>%
+  tab_options(table.width = pct(80))
+```
+
+
+# Cleaning Part 5 remove pts still in progress (still taking pre trip EMAs) 
+```{r}
+ema_sjdm_all <- clean_pts_still_in_pre_trip(ema_sjdm_all)
+tibble(
+  step = "removed pts still in pre-trip EMAs",
+  n_rows = nrow(ema_sjdm_all),
+  n_pts = n_distinct(ema_sjdm_all$PUNS_ID),
+  pt_ids = paste(sort(unique(as.character(ema_sjdm_all$PUNS_ID))), collapse = ", ")
+) %>% gt() %>% tab_options(table.width = pct(80))
+```
+
+
+## check TASK compliance
+```{r}
+ema_sjdm_all %>%
+  group_by(PUNS_ID) %>%
+  summarise(
+    n_sessions = n_distinct(session_phase_and_num),
+    .groups = "drop"
+  ) %>%
+  mutate(compliance_pct = round((n_sessions / 60) * 100, 1)) %>%
+  gt() %>%
+  tab_header(title = "TASK ONLY pre and post trip ema compliance") %>%
+  tab_options(table.width = pct(80))
+
+ema_sjdm_all %>%
+  group_by(PUNS_ID, session_phase, session_day) %>%
+  summarise(n_sessions = n_distinct(session_number), .groups = "drop") %>%
+  mutate(phase_day = factor(
+    paste0(session_phase, "_day_", session_day),
+    levels = c(paste0("pre_day_", 1:10), paste0("post_day_", 1:10))
+  )) %>%
+  select(PUNS_ID, phase_day, n_sessions) %>%
+  complete(PUNS_ID, phase_day, fill = list(n_sessions = 0L)) %>%
+  pivot_wider(
+    names_from  = phase_day,
+    values_from = n_sessions,
+    values_fill  = 0L
+  ) %>%
+  select(PUNS_ID, paste0("pre_day_", 1:10), paste0("post_day_", 1:10)) %>%
+  gt() %>%
+  tab_header(title = "TASK ONLY sessions per day per participant") %>%
+  tab_options(table.width = pct(80))
+
+ema_sjdm_all %>%
+  filter(session_phase == "pre") %>%
+  group_by(PUNS_ID) %>%
+  summarise(
+    n_sessions = n_distinct(session_number),
+    .groups = "drop"
+  ) %>%
+  mutate(compliance_pct = round((n_sessions / 30) * 100, 1)) %>%
+  arrange(desc(compliance_pct)) %>%
+  gt() %>%
+  tab_header(title = "TASK ONLY pre trip compliance") %>%
+  tab_options(table.width = pct(80))
+```
+
+
+## Cleaning part 6 remove pts with rly low compliance 
+```{r}
+# remove pts with rly low compliance 
+ema_sjdm_all <- remove_low_compliance_pts(ema_sjdm_all)
+tibble(
+  step = "removed rly low compliance pts",
+  n_rows = nrow(ema_sjdm_all),
+  n_pts = n_distinct(ema_sjdm_all$PUNS_ID),
+  pt_ids = paste(sort(unique(as.character(ema_sjdm_all$PUNS_ID))), collapse = ", ")
+) %>% gt() %>% tab_options(table.width = pct(80))
+```
+
+
+
+
+### Export 
+```{r}
+if (!dir.exists("pre-processed_ema-sjdm_data")) dir.create("pre-processed_ema-sjdm_data")
+write_csv(ema_sjdm_all, "pre-processed_ema-sjdm_data/ema_sjdm_cleaned.csv")
+
+```
+

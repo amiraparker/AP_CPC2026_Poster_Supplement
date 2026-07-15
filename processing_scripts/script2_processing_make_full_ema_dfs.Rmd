@@ -1,0 +1,535 @@
+---
+title: "SCRIPT 2 -- DATA PROCESSING PT 2 :Make full ema dfs"
+date: "07.08.2026"
+format:
+  html:
+    code-fold: true
+    embed-resources: true
+    toc: true
+    toc-depth: 3
+    df-print: paged
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+set dir
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = here::here())
+
+```
+
+display
+```{css, echo=FALSE}
+pre { max-width: 100%; overflow-x: auto; }
+```
+
+
+### source scripts with functions 
+```{r, message=FALSE, warning=FALSE}
+options(repos = c(CRAN = "https://cloud.r-project.org/"))
+source("Functions/packages.R")
+source("Functions/make_ema_sjdm_dfs.R")
+source("Functions/make_full_ema_dfs.R")
+
+```
+
+### load packages 
+```{r, message=FALSE, warning=FALSE}
+loadpackages()
+conflicts_prefer(dplyr::lag)
+conflicts_prefer(data.table::first)
+conflicts_prefer(rstatix::filter)
+conflicts_prefer(dplyr::rename)
+conflicts_prefer(dplyr::summarise)
+conflicts_prefer(dplyr::summarize)
+conflicts_prefer(dplyr::mutate)
+conflicts_prefer(dplyr::arrange)
+conflicts_prefer(dplyr::count)
+conflicts_prefer(dplyr::filter)
+
+```
+
+## Load pre-processed sjdm data 
+```{r}
+# load the cleaned df we made in QMD 1 (ema_sjdm_cleaned.csv)
+#ema_sjdm <- read_csv("pre-processed_ema-sjdm_data/ema_sjdm_cleaned_5.29.csv", show_col_types = FALSE) %>%
+#setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+#setwd("..")
+
+ema_sjdm <- read_csv("pre-processed_ema-sjdm_data/ema_sjdm_cleaned.csv",
+                     show_col_types = FALSE) %>% 
+  mutate(PUNS_ID = as.character(PUNS_ID))
+
+check_N_tibble(ema_sjdm, "loaded task data") %>% gt() %>% tab_options(table.width = pct(80))
+# sessions per pt 
+ema_sjdm %>%
+  group_by(PUNS_ID) %>%
+  summarise(
+        n_sessions = n_distinct(session_phase_and_num), .groups = "drop") %>%
+  gt() %>%
+  tab_options(table.width = pct(80))
+
+
+ema_sjdm %>%
+  distinct(PUNS_ID, session_phase, session_phase_and_num) %>%
+  count(PUNS_ID, session_phase, name = "n_sessions") %>%
+  pivot_wider(names_from = session_phase, values_from = n_sessions, values_fill = 0) %>%
+  arrange(PUNS_ID) %>%
+  gt() %>% tab_header(title = "task sessions per pt (pre vs post)")
+#str(ema_sjdm)
+
+
+
+```
+
+
+## Load fabla ema data
+```{r}
+# Set location of data (whenever there is a new data pull from fabla will have to update the date of the folder to match)
+
+data_folder_fabla <- "fabla_raw-data_07.08"
+
+all_files_fabla <- list.files(data_folder_fabla, pattern = "\\.csv$", full.names = TRUE)
+
+# N files total
+
+cat("total N of CSV files:\n")
+
+print(length(all_files_fabla))
+
+print(all_files_fabla)
+
+
+fabla_puns <- read_csv(
+  list.files(data_folder_fabla, pattern = "PUNS", full.names = TRUE),
+  show_col_types = FALSE
+)
+fabla_grins <- read_csv(
+  list.files(data_folder_fabla, pattern = "GRINS", full.names = TRUE),
+  show_col_types = FALSE
+)
+
+tibble(
+  source = c("fabla_puns", "fabla_grins"),
+  n_rows = c(nrow(fabla_puns), nrow(fabla_grins)),
+  n_pts  = c(n_distinct(fabla_puns$ParticipantID), n_distinct(fabla_grins$ParticipantID))
+) %>% gt() %>% tab_header(title = "loaded fabla data") %>% tab_options(table.width = pct(80))
+
+```
+
+
+
+
+## Clean affect dfs 
+```{r}
+sjdm_pt_ids <- unique(ema_sjdm$PUNS_ID)
+#------------------------------------------------------------------------------#
+# Make sure we have correct col types and names for affect and pid cols
+fabla_puns  <- fabla_puns  %>% clean_affect()
+fabla_grins <- fabla_grins %>% clean_affect()
+
+
+#------------------------------------------------------------------------------#
+# REmove all ema items except affect
+bind_rows(
+  check_N_tibble(fabla_puns, "(PUNS) b4 keep_affect_question"),
+  check_N_tibble(fabla_grins, "(GRINS) b4 keep_affect_question")
+) %>% gt()
+
+affect_puns  <- fabla_puns  %>% keep_affect_question()
+affect_grins <- fabla_grins %>% keep_affect_question()
+
+bind_rows(
+  check_N_tibble(affect_puns,  "(PUNS) after keep_affect_question"),
+  check_N_tibble(affect_grins, " (GRINS) after keep_affect_question")
+) %>% gt()
+
+
+#------------------------------------------------------------------------------#
+# Drop rows that dont have a value for affect 
+bind_rows(
+  check_N_tibble(affect_puns,  "(PUNS) b4 drop_na_affect"),
+  check_N_tibble(affect_grins, "(GRINS) b4 drop_na_affect")
+) %>% gt()
+
+affect_puns  <- affect_puns  %>% drop_na_affect()
+affect_grins <- affect_grins %>% drop_na_affect()
+
+bind_rows(
+  check_N_tibble(affect_puns,  "(PUNS) after drop_na_affect"),
+  check_N_tibble(affect_grins, "(GRINS) after drop_na_affect")
+) %>% gt()
+
+
+#------------------------------------------------------------------------------#
+# Keep only pts who are in processed task df
+bind_rows(
+  check_N_tibble(affect_puns,  "(PUNS) b4 keep_task_pts"),
+  check_N_tibble(affect_grins, "(GRINS) b4 keep_task_pts")
+) %>% gt()
+
+affect_puns  <- affect_puns  %>% keep_task_pts()
+affect_grins <- affect_grins %>% keep_task_pts()
+
+bind_rows(
+  check_N_tibble(affect_puns,  "(PUNS) after keep_task_pts"),
+  check_N_tibble(affect_grins, "(GRINS) after keep_task_pts")
+) %>% gt()
+
+
+#------------------------------------------------------------------------------#
+# Remove duplicate diary ids
+bind_rows(
+  check_N_tibble(affect_puns,  "(PUNS) b4 remove_duplicate_diaryid"),
+  check_N_tibble(affect_grins, "(GRINS) b4remove_duplicate_diaryid")
+) %>% gt()
+
+affect_puns  <- affect_puns  %>% remove_duplicate_diaryid()
+affect_grins <- affect_grins %>% remove_duplicate_diaryid()
+
+bind_rows(
+  check_N_tibble(affect_puns,  "(PUNS) after remove_duplicate_diaryid"),
+  check_N_tibble(affect_grins, "(GRINS) after remove_duplicate_diaryid")
+) %>% gt()
+
+#------------------------------------------------------------------------------#
+# COmbine PUNS and GRINS into one df 
+affect_puns  <- affect_puns  %>% mutate(pt_group = "PUNS")
+affect_grins <- affect_grins %>% mutate(pt_group = "GRINS")
+
+affect_all <- bind_rows(affect_puns, affect_grins)
+
+check_N_tibble(affect_all, "combined puns + grins") %>% gt()
+```
+## Add date cols
+```{r}
+# IN Fabla dfs... date col is UTC (time that response was uploaded to AWS server (can have a lag)) and respondedAt is local time (time when pt actually responded).. using local time (respondedAt) for matching and then use Date if for some reason the pts device had timezone turned off (bc wont match with the pavlovia task time which is pulled from browser... (fabla time pulls from device))
+affect_all <- affect_all %>%
+  mutate(
+    affect_responded_at_date = as.Date(RespondedAt),# local 
+    affect_date = as.Date(Date) # UTC
+  )
+
+ema_sjdm <- ema_sjdm %>%
+  mutate(
+    task_date = as.Date(experiment_start), # UTC                                   
+    task_date_local = as.Date(experiment_start - lubridate::minutes(timezone_offset)) # calculate local
+  )
+```
+
+
+
+## Build out study phase and day numbering (was built into task data but not fabla so have to calculate from ema start dates)
+```{r}
+start_dates <- ema_sjdm %>%
+  distinct(PUNS_ID, ema_start_date, ema_post_start_date)
+
+# 10 pre trup days
+pre_days <- start_dates %>%
+  uncount(10) %>%                                        
+  group_by(PUNS_ID) %>%
+  mutate(
+    phase = "pre",
+    phase_day_num = row_number(), # numbers days 1-10 
+    phase_date = ema_start_date + (phase_day_num - 1) # this is an actual date... day1 = start date, day10 = startdat+9
+  ) %>%
+  ungroup()
+
+# 10 post trip days
+post_days <- start_dates %>%
+  uncount(10) %>%
+  group_by(PUNS_ID) %>%
+  mutate(
+    phase = "post",
+    phase_day_num = row_number(),
+    phase_date = ema_post_start_date + (phase_day_num - 1)
+  ) %>%
+  ungroup()
+
+# combine
+study_phase_mapping <- bind_rows(pre_days, post_days) %>%
+  mutate(phase_day = paste0(phase, "_day", phase_day_num)) %>%
+  select(PUNS_ID, phase, phase_day_num, phase_day, phase_date) %>%
+  arrange(PUNS_ID, phase, phase_day_num)
+
+# CHECK every pt should have exactly 20 rows so this should be empty 
+study_phase_mapping %>% count(PUNS_ID) %>% filter(n != 20)
+```
+
+# Map phase and phase_date to both dfs (by the local date col) 
+```{r}
+ema_sjdm <- ema_sjdm %>%
+  left_join(study_phase_mapping,
+            by = c("PUNS_ID", "session_phase" = "phase", "task_date_local" = "phase_date"))
+
+
+
+affect_all <- affect_all %>%
+  left_join(study_phase_mapping,
+            by = c("PUNS_ID", "affect_responded_at_date" = "phase_date")) %>%
+  group_by(ResponseID) %>%
+  mutate(ambiguous_phase = n() > 1) %>%
+  slice_head(n = 1) %>%
+  ungroup()
+
+check_N_tibble(ema_sjdm, "task df row n after join") %>%
+  gt() %>% tab_options(table.width = pct(80))
+check_N_tibble(affect_all, "affect df row n (should match combined count)") %>%
+  gt() %>% tab_options(table.width = pct(80))
+
+
+# check sessions left out after mapping to study day 
+affect_all %>% count(is.na(phase_day)) %>% gt() %>% tab_header(title = "affect sessions(aka rows) matched to a study day")
+ema_sjdm   %>% distinct(PUNS_ID, session_phase_and_num, phase_day) %>%
+  count(is.na(phase_day)) %>% gt() %>% tab_header(title = "task session matched to a study day")
+
+# more checks
+# check that original diary response appears only once  exactly once(should be TRUE, num)
+affect_all %>% summarise(all_unique = n_distinct(ResponseID) == n(), n = n())
+
+# and the 10 flagged rows are all 1104 on the overlap dates
+affect_all %>% filter(ambiguous_phase) %>%
+  count(PUNS_ID, affect_responded_at_date)
+```
+
+
+
+## Figure out what went wrong with sessions (typically will be affect sessions) that didnt get matched to a study day
+```{r}
+#affect_all %>% count(is.na(phase_day)) %>% gt() 
+# As of r5.29 processing these unmapped sessions were due to PIDS 1015, 1027, and 1086 who pushed or changed their trip dates and took extra days of fabla (he extra task instances were cleaned out in make_ema_sjdm_dfs.R)
+bind_rows(
+  check_N_tibble(affect_all, "b4 drop_pre_enrollment_affect"),
+  check_N_tibble(affect_all %>% drop_pre_enrollment_affect(), "after drop_pre_enrollment_affect")
+) %>% gt()
+
+affect_all <- affect_all %>% drop_pre_enrollment_affect()
+
+# any other sessions that didnt get mapped to a phase?? 
+affect_all %>% count(is.na(phase_day)) %>% gt() %>% tab_header(title = "affect sessions still taken outside of a study phase after cleaning pts w/ date changes")
+# as of 5.29 processing there are 6 of these sessions
+
+```
+
+
+
+## Fix Fabla midnight/evening to morning overflow issue 
+(some evening fablas were completed after midnight local time so were considered as part of the next days emas. santiago said use cuttof time of 4am
+
+```{r}
+
+
+#check when ppl respond to fabla
+# affect_all %>%
+#   mutate(resp_hour = as.numeric(format(RespondedAt, "%H")) +
+#                      as.numeric(format(RespondedAt, "%M"))/60) %>%
+#   mutate(hour_bin = floor(resp_hour)) %>%
+#   count(hour_bin) %>%
+#   arrange(hour_bin) %>%
+#   print(n = 24)
+# as of 5.29 seems like no one responds to fabla within 2-5am
+
+# so... make that the new previous day cutoff 
+affect_all <- affect_all %>%
+  mutate(
+    resp_hour_local = as.numeric(format(RespondedAt, "%H")),
+    study_date = if_else(resp_hour_local < 4,
+                         affect_responded_at_date - 1,
+                         affect_responded_at_date)
+  )
+
+# CHECK
+affect_all %>%
+  distinct(PUNS_ID, ResponseID, study_date) %>%
+  count(PUNS_ID, study_date, name = "n_affect") %>%
+  filter(n_affect > 3) %>%
+  gt() %>% tab_header(title = "check ifthers >3 affect emas in a day after applying 4am cuttoff (should be  empty)")
+```
+
+
+# Match task session to affect session by LOCAL time cols 
+
+```{r}
+window_min <- 120 # (keeping window 2 hrs since survey would stay open for 2 hrs so they could go back and complete it )
+
+
+
+affect_for_match <- affect_all %>%
+  mutate(window_start = RespondedAt - minutes(window_min),
+         window_end   = RespondedAt + minutes(window_min)) %>%
+  select(PUNS_ID, affect, Date, RespondedAt, ResponseID, window_start, window_end)
+
+combined <- ema_sjdm %>%
+  mutate(.row = row_number(),
+         # task local time (same construction as task_date_local, kept as datetime)
+         experiment_start_local = experiment_start - minutes(timezone_offset)) %>%
+  left_join(affect_for_match,
+            by = join_by(PUNS_ID,
+                         experiment_start_local >= window_start,
+                         experiment_start_local <= window_end)) %>%
+  mutate(time_diff = abs(as.numeric(difftime(experiment_start_local, RespondedAt,
+                                             units = "mins")))) %>%
+  group_by(.row) %>%
+  slice_min(time_diff, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  mutate(match_method = if_else(is.na(time_diff), NA_character_, "local"))
+
+
+combined %>%
+  summarise(n_trials = n(),
+            n_matched = sum(!is.na(time_diff)),
+            n_unmatched = sum(is.na(time_diff)),
+            pct_matched = round(100 * mean(!is.na(time_diff)), 1)) %>%
+  gt() %>% tab_header(title = "task session and affect session match results")
+
+combined %>%
+  filter(!is.na(time_diff)) %>%
+  summarise(median_gap = round(median(time_diff), 1),
+            q90 = round(quantile(time_diff, .90), 1),
+            pct_under_60 = round(100 * mean(time_diff <= 60), 1)) %>%
+  gt() %>% tab_header(title = " gap (mins) btwn affect and task in a gven EMA")
+```
+
+# Match by AWS server time (UTC) if needed (should only be in very few cases. when the pavlovia web time and device time dnt match up incase someones task timestap (pulled from browser) and their fabla timestamp (device) time dont match (would happen if they have autmatic timezone sync turnedoff on their device for some reason) . THIS ONLY WORKS IF THE DATE COL MATCHES LOCAL WITHIN 15 MINS AKA ONLY IF THE FABLA DATA SYNCED TO THE AWS SERVER WITHOUT A LAG)
+```{r}
+combined <- bind_rows(
+  combined %>% filter(!is.na(time_diff)),
+  combined %>% filter(is.na(time_diff)) %>% match_utc_fallback(affect_all)
+)
+
+# check expected
+# AS OF 07.08 NA SHOULD BE 2 TO ACOUNT FOR FACT THAT 1021 (pre_3) AND 1083 (pre_30) SKIPPED SUBITTING EVENING FABLA BUT DID THE TASK  (their nearest fabla entry is 7 hrs away )
+combined %>%
+  distinct(PUNS_ID, session_phase_and_num, match_method) %>%
+  count(match_method) %>%
+  gt() %>% tab_header(title = "sessions by match method")
+```
+
+
+# Make analysis df
+```{r}
+ema_matched_clean <- combined %>% filter(!is.na(time_diff))
+
+# check that no fabla affect session is used twice by task session (should b empty)
+ema_matched_clean %>%
+  distinct(PUNS_ID, session_phase_and_num, ResponseID) %>%
+  count(ResponseID) %>% filter(n > 1)
+
+ema_matched_clean %>%
+  summarise(n_trials   = n(),
+            n_sessions = n_distinct(paste(PUNS_ID, session_phase_and_num)),
+            median_gap = round(median(time_diff), 1)) %>%
+  gt() %>% tab_header(title = "analytic (matched) df")
+
+# double check that should not have more more than 3 sessions per day (should b empty)
+ema_matched_clean %>%
+  distinct(PUNS_ID, session_phase_and_num, task_date_local) %>%
+  count(PUNS_ID, task_date_local, name = "n") %>%
+  filter(n > 3) %>%
+  gt() %>% tab_header(title = ">3 sessions/day?? (should be empty)")
+```
+# Account for 10 extra sessions (as of 7.08)
+```{r}
+extra_sessions <- tribble(
+  ~PUNS_ID, ~session_phase_and_num,
+  "1017", "pre_25",
+  "1032", "pre_15",
+  "1035", "pre_3",
+  "1050", "pre_15",
+  "1067", "pre_15",
+  "1067", "pre_21",
+  "1070", "pre_28",
+  "1080", "pre_12",
+  "1080", "pre_29",
+  "1083", "pre_18"
+)
+
+check_N_tibble(ema_matched_clean, "b4 dropping extra session") %>% gt()
+
+ema_matched_clean <- ema_matched_clean %>%
+  anti_join(extra_sessions, by = c("PUNS_ID", "session_phase_and_num"))
+
+check_N_tibble(ema_matched_clean, "after dropping extra sessions") %>% gt()
+# expect exactly 240 fewer rows (10 sessions x 24 trials), same 26 pts
+```
+
+
+
+# PRE TRIP COMPLIANCE STATS 
+```{r}
+pre_compliance <- ema_matched_clean %>%
+  filter(session_phase == "pre") %>%
+  group_by(PUNS_ID) %>%
+  summarise(n_sessions = n_distinct(session_phase_and_num),
+            n_trials   = n(),
+            .groups = "drop") %>%
+  mutate(compliance_pct = round(100 * n_sessions / 30, 1)) %>%
+  arrange(desc(compliance_pct))
+
+pre_compliance %>%
+  gt() %>% tab_header(title = "PRE TRIP COMPLIANCE AS OF 07.08") %>%
+  tab_options(table.width = pct(80))
+
+# pre-phase sample size
+ema_matched_clean %>%
+  filter(session_phase == "pre") %>%
+  summarise(N_participants = n_distinct(PUNS_ID),
+            N_sessions = n_distinct(paste(PUNS_ID, session_phase_and_num)),
+            N_trials= n()) %>%
+  gt() %>% tab_header(title = "PRE TRIP N SUBJECTS")
+
+# SUMMARY STATS
+pre_compliance %>%
+  summarise(n_pts = n(),
+            mean_sessions = round(mean(n_sessions), 1),
+            sd_sessions = round(sd(n_sessions), 1),
+            median_sessions = median(n_sessions),
+            min_sessions = min(n_sessions),
+            max_sessions = max(n_sessions),
+            mean_overall_compliance_pct = round(mean(compliance_pct), 1),
+            sd_overall_compliance_pct = round(sd(compliance_pct), 1)) %>%
+  gt() %>% tab_header(title = "PRE TRIP COMPLIANCE SUMMARY TABLE")
+```
+
+
+### add within-person affect vars
+```{r}
+# affect_overall_avg = avg affect across all their sessions within pre trip 
+# affect_this_session_minus_overall_avg = the affect score from this session minus their personal avg
+# affect_z  = z-scored within pt (when affect_z = 1 that means this affect score is 1 SD abv their personal avg)
+
+ema_pre_clean <- ema_matched_clean %>%
+  filter(session_phase == "pre") %>%
+  group_by(PUNS_ID) %>%
+  mutate(
+    affect_pre_avg = mean(affect, na.rm = TRUE),
+    affect_this_session_minus_pre_avg  = affect - affect_pre_avg,
+    affect_z = affect_this_session_minus_pre_avg / sd(affect, na.rm = TRUE)     
+  ) %>%
+  ungroup()
+
+tibble(
+  step = "added affect_z (only for pre trip)",
+  n_trial_rows = nrow(ema_pre_clean),
+  n_with_affect = sum(!is.na(ema_pre_clean$affect_z))
+) %>% gt() %>% tab_options(table.width = pct(80))
+```
+
+
+
+
+
+
+
+
+
+### save merged data
+```{r}
+if (!dir.exists("pre-processed_full-ema_data")) dir.create("pre-processed_full-ema_data")
+ write_csv(ema_pre_clean, "pre-processed_full-ema_data/full_ema_pre-trip.csv")
+
+```
+
+
+
