@@ -40,7 +40,8 @@ Input and Output for each part of analysis pipeline:
     * Input: processed simulated data, processed empirical data, and data simulated from model posteriors 
     * Outputs: key plots used in posters
  
-If you want to run the .Rmds refer to folder ‘analysis_scripts’ and select ‘Run All’ for each .rmd (these are the same files that are the rendered html)(starting with post-run_cpc_model.Rmd, then key_plots.Rmd) 
+If you want to run the .Rmds refer to folder ‘analysis_scripts’ and select ‘Run All’ for each .rmd (these are the same files that are the rendered html)(starting with post-run_cpc_model.ipynb, then key_plots.Rmd). 
+NOTE: you will be unable to run post-run_cpc_model.ipynb unless you run the HSSM model (you will need a cluster or similar HPC setup). Refer to this folder to run the model 'stuff_for_07.09_model_fitting'
 
 **If you want to replicate this analysis**
 1. git clone this repo to your desktop (or location of your choice)
