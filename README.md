@@ -2,6 +2,7 @@
 This repo contains data, processing and analysis code, and supplementary materials for the poster titled: Computational Correlates of Self-Schema Accessibility in Daily Life (presented at the 2026 Computational Psychiatry Conference.)
 Parker, A., Pandey, S., Kessler, N., Pozzo, N., Banerjee, T., Arconada Alvarez, S., Palitsky, R., Kaplan, D. M., & Hitchcock, P. (July, 2026). Computational correlates of self-schema accessibility in daily life.  Fourth Annual Computational Psychiatry Conference, New Haven, CT.
 
+Acknowledgements: I would like to thank the Translational Lab, HEAT Lab, and PUNS study team for extensive time and support dedicated to this project. 
 
 Data + (prelim) Processing/Analysis Pipeline 
 
